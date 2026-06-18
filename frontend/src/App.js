@@ -4,7 +4,7 @@ import "./App.css";
 import TaglineSection from "./TaglineSection";
 
 const api = axios.create({
-  baseURL: "https://fastapi-demo-delta-wine.vercel.app",
+  baseURL: process.env.REACT_APP_API_URL || "http://localhost:8000",
 });
 
 function App() {

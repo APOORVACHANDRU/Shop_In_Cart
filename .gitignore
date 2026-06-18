@@ -56,3 +56,7 @@ Thumbs.db
 .env.test.local
 .env.production.local
 .vercel
+
+# Environment variables
+.env
+frontend/.env
