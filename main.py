@@ -56,20 +56,24 @@ product = Product(id=5, name="Chair", description="A comfortable chair", price=8
 
 def init_db():
     db = SessionLocal()
+    try:
+        existing_count = db.query(database_models.Product).count()
 
-    existing_count = db.query(database_models.Product).count()
+        if existing_count == 0:
+            for product in products:
+                db.add(database_models.Product(**product.model_dump(exclude_none=True)))
+            db.commit()
+            print("Database initialized with sample products.")
 
-    if existing_count == 0:
-        for product in products:
-            db.add(database_models.Product(**product.model_dump()))
+        # Fix sequence to avoid duplicate key errors when adding new products
+        from sqlalchemy import text
+        db.execute(text("SELECT setval('products_id_seq', (SELECT COALESCE(MAX(id), 1) FROM products))"))
         db.commit()
-        print("Database initialized with sample products.")
-
-    # Fix sequence to avoid duplicate key errors when adding new products
-    from sqlalchemy import text
-    db.execute(text("SELECT setval('products_id_seq', (SELECT COALESCE(MAX(id), 1) FROM products))"))
-    db.commit()
-    db.close()
+    except Exception as e:
+        print(f"init_db warning: {e}")
+        db.rollback()
+    finally:
+        db.close()
 
 init_db()    
 
