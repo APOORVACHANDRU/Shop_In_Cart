@@ -1,5 +1,6 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 import database_models
 from database import engine
@@ -25,6 +26,15 @@ app = FastAPI(
     version="1.0.0",
     description="Full-stack inventory management with sales/purchase order workflows, expense tracking, and AI-powered insights.",
 )
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Return actual error details instead of generic 500 (useful for debugging deploys)."""
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"{type(exc).__name__}: {str(exc)}"},
+    )
 
 # CORS
 app.add_middleware(

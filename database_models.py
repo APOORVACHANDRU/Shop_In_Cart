@@ -1,10 +1,8 @@
 from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Date
-from sqlalchemy.orm import relationship, DeclarativeBase
+from sqlalchemy.orm import relationship, declarative_base
 from datetime import datetime, date, timezone
 
-
-class Base(DeclarativeBase):
-    pass
+Base = declarative_base()
 
 
 def _utcnow():
