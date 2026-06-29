@@ -1,44 +1,42 @@
 import { useEffect, useState, useMemo, useCallback, ChangeEvent, FormEvent } from "react";
-import axios from "axios";
-import { Product, ProductForm, PaginatedResponse } from "../types";
+import { productService, extractErrorMessage, Product, ProductListResponse } from "../services/api";
+import { useNotification } from "../hooks/useNotification";
 import ConfirmModal from "../components/ConfirmModal";
 
-const api = axios.create({
-  baseURL: process.env.REACT_APP_API_URL || "http://localhost:8000",
-});
-
 const PAGE_SIZE = 5;
+
+interface ProductForm {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  price: string;
+  quantity: string;
+}
 
 const Products = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [cursors, setCursors] = useState<(number | null)[]>([null]);
   const [currentPage, setCurrentPage] = useState(0);
   const [hasNext, setHasNext] = useState(false);
-  const [form, setForm] = useState<ProductForm>({ id: "", name: "", description: "", price: "", quantity: "" });
+  const [form, setForm] = useState<ProductForm>({ id: "", name: "", description: "", category: "General", price: "", quantity: "" });
   const [editId, setEditId] = useState<number | null>(null);
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState("");
   const [sortField, setSortField] = useState<keyof Product>("id");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
-
-  useEffect(() => { if (message) { const t = setTimeout(() => setMessage(""), 5000); return () => clearTimeout(t); } }, [message]);
-  useEffect(() => { if (error) { const t = setTimeout(() => setError(""), 5000); return () => clearTimeout(t); } }, [error]);
+  const { notification, success, error: showError } = useNotification();
 
   const fetchProducts = useCallback(async (cursor: number | null = null) => {
     setLoading(true);
     try {
-      const params: { limit: number; cursor?: number } = { limit: PAGE_SIZE };
-      if (cursor !== null) params.cursor = cursor;
-      const res = await api.get<PaginatedResponse>("/products/", { params });
-      setProducts(res.data.products);
-      setHasNext(res.data.has_next);
-      setError("");
-    } catch { setError("Failed to fetch products"); }
+      const data = await productService.list({ limit: PAGE_SIZE, cursor });
+      setProducts(data.products);
+      setHasNext(data.has_next);
+    } catch (err) { showError(extractErrorMessage(err)); }
     setLoading(false);
-  }, []);
+  }, [showError]);
 
   useEffect(() => { fetchProducts(null); }, [fetchProducts]);
 
@@ -87,34 +85,39 @@ const Products = () => {
   }, [products, filter, sortField, sortDirection]);
 
   const handleChange = (e: ChangeEvent<HTMLInputElement>) => setForm({ ...form, [e.target.name]: e.target.value });
-  const resetForm = () => { setForm({ id: "", name: "", description: "", price: "", quantity: "" }); setEditId(null); };
+  const resetForm = () => { setForm({ id: "", name: "", description: "", category: "General", price: "", quantity: "" }); setEditId(null); };
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    setLoading(true); setMessage(""); setError("");
+    setLoading(true);
     try {
-      const payload = editId
-        ? { ...form, id: Number(form.id), price: Number(form.price), quantity: Number(form.quantity) }
-        : { name: form.name, description: form.description, price: Number(form.price), quantity: Number(form.quantity) };
-      if (editId) { await api.put(`/products/${editId}`, payload); setMessage("Product updated successfully"); }
-      else { await api.post("/products/", payload); setMessage("Product created successfully"); }
+      const payload = { name: form.name, description: form.description, category: form.category, price: Number(form.price), quantity: Number(form.quantity) };
+      if (editId) {
+        await productService.update(editId, payload);
+        success("Product updated successfully");
+      } else {
+        await productService.create(payload);
+        success("Product created successfully");
+      }
       resetForm(); setCursors([null]); setCurrentPage(0); fetchProducts(null);
     } catch (err: unknown) {
-      if (axios.isAxiosError(err)) setError(err.response?.data?.detail || "Operation failed");
-      else setError("Operation failed");
+      showError(extractErrorMessage(err));
     }
     setLoading(false);
   };
 
   const handleEdit = (product: Product) => {
-    setForm({ id: String(product.id), name: product.name, description: product.description, price: String(product.price), quantity: String(product.quantity) });
-    setEditId(product.id); setMessage(""); setError("");
+    setForm({ id: String(product.id), name: product.name, description: product.description, category: product.category, price: String(product.price), quantity: String(product.quantity) });
+    setEditId(product.id);
   };
 
   const handleDelete = async (id: number) => {
-    setLoading(true); setMessage(""); setError("");
-    try { await api.delete(`/products/${id}`); setMessage("Product deleted"); setCursors([null]); setCurrentPage(0); fetchProducts(null); }
-    catch { setError("Delete failed"); }
+    setLoading(true);
+    try {
+      await productService.delete(id);
+      success("Product deleted");
+      setCursors([null]); setCurrentPage(0); fetchProducts(null);
+    } catch (err) { showError(extractErrorMessage(err)); }
     setLoading(false);
     setDeleteTarget(null);
   };
@@ -169,6 +172,18 @@ const Products = () => {
               className="px-3.5 py-3 border border-gray-200 rounded-lg text-sm bg-gray-50 focus:bg-white focus:border-pink-brand focus:ring-2 focus:ring-pink-brand/10 outline-none" />
             <input type="text" name="description" placeholder="Description" value={form.description} onChange={handleChange} required
               className="px-3.5 py-3 border border-gray-200 rounded-lg text-sm bg-gray-50 focus:bg-white focus:border-pink-brand focus:ring-2 focus:ring-pink-brand/10 outline-none" />
+            <select name="category" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}
+              className="px-3.5 py-3 border border-gray-200 rounded-lg text-sm bg-gray-50 focus:bg-white focus:border-pink-brand outline-none">
+              <option value="General">General</option>
+              <option value="Electronics">Electronics</option>
+              <option value="Clothing">Clothing</option>
+              <option value="Food & Beverages">Food & Beverages</option>
+              <option value="Furniture">Furniture</option>
+              <option value="Stationery">Stationery</option>
+              <option value="Health & Beauty">Health & Beauty</option>
+              <option value="Sports">Sports</option>
+              <option value="Other">Other</option>
+            </select>
             <input type="number" name="price" placeholder="Price" value={form.price} onChange={handleChange} required step="0.01"
               className="px-3.5 py-3 border border-gray-200 rounded-lg text-sm bg-gray-50 focus:bg-white focus:border-pink-brand focus:ring-2 focus:ring-pink-brand/10 outline-none" />
             <input type="number" name="quantity" placeholder="Quantity" value={form.quantity} onChange={handleChange} required
@@ -179,15 +194,15 @@ const Products = () => {
                 {editId ? "Update" : "Add"}
               </button>
               {editId && (
-                <button type="button" onClick={() => { resetForm(); setMessage(""); setError(""); }}
+                <button type="button" onClick={() => { resetForm(); }}
                   className="px-5 py-3 bg-white border border-gray-200 text-gray-700 text-sm font-bold rounded-lg hover:bg-gray-50 transition">
                   Cancel
                 </button>
               )}
             </div>
           </form>
-          {message && <div className="mt-3 bg-green-50 border border-green-200 text-green-700 text-sm px-4 py-2.5 rounded-lg">{message}</div>}
-          {error && <div className="mt-3 bg-red-50 border border-red-200 text-red-600 text-sm px-4 py-2.5 rounded-lg">{error}</div>}
+          {notification && notification.type === "success" && <div className="mt-3 bg-green-50 border border-green-200 text-green-700 text-sm px-4 py-2.5 rounded-lg">{notification.message}</div>}
+          {notification && notification.type === "error" && <div className="mt-3 bg-red-50 border border-red-200 text-red-600 text-sm px-4 py-2.5 rounded-lg">{notification.message}</div>}
         </div>
 
         {/* Table */}
@@ -203,6 +218,7 @@ const Products = () => {
                     <tr className="bg-gray-50 border-b border-gray-200">
                       <th onClick={() => handleSort("id")} className="text-left px-4 py-3 text-xs font-bold uppercase tracking-wide text-gray-500 cursor-pointer hover:text-pink-brand select-none">ID{sortIcon("id")}</th>
                       <th onClick={() => handleSort("name")} className="text-left px-4 py-3 text-xs font-bold uppercase tracking-wide text-gray-500 cursor-pointer hover:text-pink-brand select-none">Name{sortIcon("name")}</th>
+                      <th className="text-left px-4 py-3 text-xs font-bold uppercase tracking-wide text-gray-500">Category</th>
                       <th className="text-left px-4 py-3 text-xs font-bold uppercase tracking-wide text-gray-500">Description</th>
                       <th onClick={() => handleSort("price")} className="text-left px-4 py-3 text-xs font-bold uppercase tracking-wide text-gray-500 cursor-pointer hover:text-pink-brand select-none">Price{sortIcon("price")}</th>
                       <th onClick={() => handleSort("quantity")} className="text-left px-4 py-3 text-xs font-bold uppercase tracking-wide text-gray-500 cursor-pointer hover:text-pink-brand select-none">Qty{sortIcon("quantity")}</th>
@@ -214,6 +230,7 @@ const Products = () => {
                       <tr key={p.id} className="border-b border-gray-100 hover:bg-gray-50 transition">
                         <td className="px-4 py-3.5 text-sm text-gray-600">{p.id}</td>
                         <td className="px-4 py-3.5 text-sm font-semibold text-gray-900">{p.name}</td>
+                        <td className="px-4 py-3.5"><span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-600">{p.category}</span></td>
                         <td className="px-4 py-3.5 text-sm text-gray-400 max-w-[200px] truncate" title={p.description}>{p.description}</td>
                         <td className="px-4 py-3.5 text-sm font-bold text-gray-900">${currency(p.price)}</td>
                         <td className="px-4 py-3.5">
@@ -230,7 +247,7 @@ const Products = () => {
                       </tr>
                     ))}
                     {filteredProducts.length === 0 && (
-                      <tr><td colSpan={6} className="text-center text-gray-400 py-10 text-sm">No products found.</td></tr>
+                      <tr><td colSpan={7} className="text-center text-gray-400 py-10 text-sm">No products found.</td></tr>
                     )}
                   </tbody>
                 </table>

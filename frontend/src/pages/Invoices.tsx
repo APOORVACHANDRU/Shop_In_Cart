@@ -1,19 +1,6 @@
 import { useEffect, useState } from "react";
-import axios from "axios";
-
-const api = axios.create({
-  baseURL: process.env.REACT_APP_API_URL || "http://localhost:8000",
-});
-
-interface Invoice {
-  id: number;
-  order_id: number;
-  customer_name: string;
-  total: number;
-  status: string;
-  created_at: string;
-  paid_at: string | null;
-}
+import { invoiceService, extractErrorMessage, Invoice } from "../services/api";
+import { useNotification } from "../hooks/useNotification";
 
 const STATUS_COLORS: Record<string, string> = {
   unpaid: "bg-yellow-50 text-yellow-700 border-yellow-200",
@@ -24,17 +11,13 @@ const STATUS_COLORS: Record<string, string> = {
 const Invoices = () => {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
-
-  useEffect(() => { if (message) { const t = setTimeout(() => setMessage(""), 5000); return () => clearTimeout(t); } }, [message]);
-  useEffect(() => { if (error) { const t = setTimeout(() => setError(""), 5000); return () => clearTimeout(t); } }, [error]);
+  const { notification, success, error: showError } = useNotification();
 
   const fetchInvoices = async () => {
     try {
-      const res = await api.get("/invoices/");
-      setInvoices(res.data);
-    } catch { setError("Failed to fetch invoices"); }
+      const data = await invoiceService.list();
+      setInvoices(data);
+    } catch (err) { showError(extractErrorMessage(err)); }
     setLoading(false);
   };
 
@@ -42,11 +25,11 @@ const Invoices = () => {
 
   const markPaid = async (invoiceId: number) => {
     try {
-      await api.put(`/invoices/${invoiceId}/pay`);
-      setMessage(`Invoice #${invoiceId} marked as paid`);
+      await invoiceService.markPaid(invoiceId);
+      success(`Invoice #${invoiceId} marked as paid`);
       fetchInvoices();
-    } catch (err: any) {
-      setError(err.response?.data?.detail || "Failed to update invoice");
+    } catch (err) {
+      showError(extractErrorMessage(err));
     }
   };
 
@@ -62,8 +45,8 @@ const Invoices = () => {
         <p className="text-sm text-gray-500 mt-1">Track invoices and payment status</p>
       </div>
 
-      {message && <div className="mb-4 bg-green-50 border border-green-200 text-green-700 text-sm px-4 py-2.5 rounded-lg">{message}</div>}
-      {error && <div className="mb-4 bg-red-50 border border-red-200 text-red-600 text-sm px-4 py-2.5 rounded-lg">{error}</div>}
+      {notification && notification.type === "success" && <div className="mb-4 bg-green-50 border border-green-200 text-green-700 text-sm px-4 py-2.5 rounded-lg">{notification.message}</div>}
+      {notification && notification.type === "error" && <div className="mb-4 bg-red-50 border border-red-200 text-red-600 text-sm px-4 py-2.5 rounded-lg">{notification.message}</div>}
 
       {/* Summary cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">

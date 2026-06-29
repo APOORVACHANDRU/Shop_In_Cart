@@ -1,20 +1,7 @@
 import { useEffect, useState, FormEvent } from "react";
-import axios from "axios";
+import { expenseService, extractErrorMessage, Expense } from "../services/api";
+import { useNotification } from "../hooks/useNotification";
 import ConfirmModal from "../components/ConfirmModal";
-
-const api = axios.create({
-  baseURL: process.env.REACT_APP_API_URL || "http://localhost:8000",
-});
-
-interface Expense {
-  id: number;
-  description: string;
-  category: string;
-  amount: number;
-  vendor_name: string | null;
-  date: string | null;
-  created_at: string;
-}
 
 const CATEGORIES = ["Supplies", "Shipping", "Marketing", "Utilities", "Other"];
 
@@ -35,19 +22,15 @@ const Expenses = () => {
   const [amount, setAmount] = useState("");
   const [vendorName, setVendorName] = useState("");
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<Expense | null>(null);
-
-  useEffect(() => { if (message) { const t = setTimeout(() => setMessage(""), 5000); return () => clearTimeout(t); } }, [message]);
-  useEffect(() => { if (error) { const t = setTimeout(() => setError(""), 5000); return () => clearTimeout(t); } }, [error]);
+  const { notification, success, error: showError } = useNotification();
 
   const fetchExpenses = async () => {
     setLoading(true);
     try {
-      const res = await api.get("/expenses/");
-      setExpenses(res.data);
-    } catch { setError("Failed to fetch expenses"); }
+      const data = await expenseService.list();
+      setExpenses(data);
+    } catch (err) { showError(extractErrorMessage(err)); }
     setLoading(false);
   };
 
@@ -55,23 +38,22 @@ const Expenses = () => {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    setError(""); setMessage("");
 
     if (!description.trim() || !amount || Number(amount) <= 0) {
-      setError("Description and a valid amount are required");
+      showError("Description and a valid amount are required");
       return;
     }
 
     setLoading(true);
     try {
-      await api.post("/expenses/", {
+      await expenseService.create({
         description,
         category,
         amount: Number(amount),
-        vendor_name: vendorName || null,
-        date: date || null,
+        vendor_name: vendorName || undefined,
+        date: date || undefined,
       });
-      setMessage("Expense recorded");
+      success("Expense recorded");
       setDescription("");
       setCategory("Supplies");
       setAmount("");
@@ -79,8 +61,8 @@ const Expenses = () => {
       setDate(new Date().toISOString().split("T")[0]);
       setShowForm(false);
       fetchExpenses();
-    } catch (err: any) {
-      setError(err.response?.data?.detail || "Failed to create expense");
+    } catch (err) {
+      showError(extractErrorMessage(err));
     }
     setLoading(false);
   };
@@ -88,11 +70,11 @@ const Expenses = () => {
   const handleDelete = async (id: number) => {
     setLoading(true);
     try {
-      await api.delete(`/expenses/${id}`);
-      setMessage("Expense deleted");
+      await expenseService.delete(id);
+      success("Expense deleted");
       fetchExpenses();
-    } catch (err: any) {
-      setError(err.response?.data?.detail || "Failed to delete expense");
+    } catch (err) {
+      showError(extractErrorMessage(err));
     }
     setLoading(false);
     setDeleteTarget(null);
@@ -136,8 +118,8 @@ const Expenses = () => {
         </button>
       </div>
 
-      {message && <div className="mb-4 bg-green-50 border border-green-200 text-green-700 text-sm px-4 py-2.5 rounded-lg">{message}</div>}
-      {error && <div className="mb-4 bg-red-50 border border-red-200 text-red-600 text-sm px-4 py-2.5 rounded-lg">{error}</div>}
+      {notification && notification.type === "success" && <div className="mb-4 bg-green-50 border border-green-200 text-green-700 text-sm px-4 py-2.5 rounded-lg">{notification.message}</div>}
+      {notification && notification.type === "error" && <div className="mb-4 bg-red-50 border border-red-200 text-red-600 text-sm px-4 py-2.5 rounded-lg">{notification.message}</div>}
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">

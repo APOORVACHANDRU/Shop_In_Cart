@@ -1,36 +1,7 @@
-import { useEffect, useState, ChangeEvent, FormEvent } from "react";
-import axios from "axios";
+import { useEffect, useState, FormEvent } from "react";
+import { salesService, productService, extractErrorMessage, SalesOrder, Product } from "../services/api";
+import { useNotification } from "../hooks/useNotification";
 import ConfirmModal from "../components/ConfirmModal";
-
-const api = axios.create({
-  baseURL: process.env.REACT_APP_API_URL || "http://localhost:8000",
-});
-
-interface OrderItem {
-  id: number;
-  product_id: number;
-  product_name: string;
-  quantity: number;
-  unit_price: number;
-  subtotal: number;
-}
-
-interface SalesOrder {
-  id: number;
-  customer_name: string;
-  status: string;
-  total: number;
-  created_at: string;
-  updated_at: string;
-  items: OrderItem[];
-}
-
-interface Product {
-  id: number;
-  name: string;
-  price: number;
-  quantity: number;
-}
 
 interface FormItem {
   product_id: string;
@@ -52,27 +23,23 @@ const SalesOrders = () => {
   const [showForm, setShowForm] = useState(false);
   const [customerName, setCustomerName] = useState("");
   const [formItems, setFormItems] = useState<FormItem[]>([{ product_id: "", quantity: "1" }]);
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<SalesOrder | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<SalesOrder | null>(null);
-
-  useEffect(() => { if (message) { const t = setTimeout(() => setMessage(""), 5000); return () => clearTimeout(t); } }, [message]);
-  useEffect(() => { if (error) { const t = setTimeout(() => setError(""), 5000); return () => clearTimeout(t); } }, [error]);
+  const { notification, success, error: showError } = useNotification();
 
   const fetchOrders = async () => {
     setLoading(true);
     try {
-      const res = await api.get("/sales-orders/");
-      setOrders(res.data);
-    } catch { setError("Failed to fetch orders"); }
+      const data = await salesService.list();
+      setOrders(data);
+    } catch (err) { showError(extractErrorMessage(err)); }
     setLoading(false);
   };
 
   const fetchProducts = async () => {
     try {
-      const res = await api.get("/products/", { params: { limit: 100 } });
-      setProducts(res.data.products || []);
+      const data = await productService.list({ limit: 100 });
+      setProducts(data.products || []);
     } catch { /* ignore */ }
   };
 
@@ -88,58 +55,57 @@ const SalesOrders = () => {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    setError(""); setMessage("");
     const items = formItems
       .filter((i) => i.product_id && Number(i.quantity) > 0)
       .map((i) => ({ product_id: Number(i.product_id), quantity: Number(i.quantity) }));
 
     if (!customerName.trim() || items.length === 0) {
-      setError("Customer name and at least one item required");
+      showError("Customer name and at least one item required");
       return;
     }
 
     setLoading(true);
     try {
-      await api.post("/sales-orders/", { customer_name: customerName, items });
-      setMessage("Sales order created");
+      await salesService.create({ customer_name: customerName, items });
+      success("Sales order created");
       setCustomerName("");
       setFormItems([{ product_id: "", quantity: "1" }]);
       setShowForm(false);
       fetchOrders();
     } catch (err: any) {
-      setError(err.response?.data?.detail || "Failed to create order");
+      showError(extractErrorMessage(err));
     }
     setLoading(false);
   };
 
   const updateStatus = async (orderId: number, status: string) => {
     try {
-      await api.put(`/sales-orders/${orderId}/status`, { status });
-      setMessage(`Order #${orderId} updated to ${status}`);
+      await salesService.updateStatus(orderId, status);
+      success(`Order #${orderId} updated to ${status}`);
       fetchOrders();
       fetchProducts(); // Stock may have changed
     } catch (err: any) {
-      setError(err.response?.data?.detail || "Failed to update status");
+      showError(extractErrorMessage(err));
     }
   };
 
   const createInvoice = async (orderId: number) => {
     try {
-      await api.post(`/sales-orders/${orderId}/invoice`);
-      setMessage(`Invoice created for order #${orderId}`);
+      await salesService.createInvoice(orderId);
+      success(`Invoice created for order #${orderId}`);
     } catch (err: any) {
-      setError(err.response?.data?.detail || "Failed to create invoice");
+      showError(extractErrorMessage(err));
     }
   };
 
   const handleDelete = async (id: number) => {
     setLoading(true);
     try {
-      await api.delete(`/sales-orders/${id}`);
-      setMessage("Order deleted");
+      await salesService.delete(id);
+      success("Order deleted");
       fetchOrders();
     } catch (err: any) {
-      setError(err.response?.data?.detail || "Failed to delete order");
+      showError(extractErrorMessage(err));
     }
     setLoading(false);
     setDeleteTarget(null);
@@ -162,8 +128,8 @@ const SalesOrders = () => {
         </button>
       </div>
 
-      {message && <div className="mb-4 bg-green-50 border border-green-200 text-green-700 text-sm px-4 py-2.5 rounded-lg">{message}</div>}
-      {error && <div className="mb-4 bg-red-50 border border-red-200 text-red-600 text-sm px-4 py-2.5 rounded-lg">{error}</div>}
+      {notification && notification.type === "success" && <div className="mb-4 bg-green-50 border border-green-200 text-green-700 text-sm px-4 py-2.5 rounded-lg">{notification.message}</div>}
+      {notification && notification.type === "error" && <div className="mb-4 bg-red-50 border border-red-200 text-red-600 text-sm px-4 py-2.5 rounded-lg">{notification.message}</div>}
 
       {/* Create Order Form */}
       {showForm && (
@@ -190,7 +156,7 @@ const SalesOrders = () => {
                   >
                     <option value="">Select product...</option>
                     {products.map((p) => (
-                      <option key={p.id} value={p.id}>{p.name} (${p.price} — {p.quantity} in stock)</option>
+                      <option key={p.id} value={p.id}>{p.name} [{p.category}] (${p.price} — {p.quantity} in stock)</option>
                     ))}
                   </select>
                   <input

@@ -1,9 +1,5 @@
 import { useState, useRef, useEffect, FormEvent } from "react";
-import axios from "axios";
-
-const api = axios.create({
-  baseURL: process.env.REACT_APP_API_URL || "http://localhost:8000",
-});
+import { aiService, extractErrorMessage } from "../services/api";
 
 interface Message {
   role: "user" | "assistant";
@@ -33,12 +29,13 @@ const Chatbot = () => {
     setLoading(true);
 
     try {
-      const res = await api.post("/ai/chat", { question: userMessage });
-      setMessages((prev) => [...prev, { role: "assistant", content: res.data.answer }]);
-    } catch {
+      const res = await aiService.chat(userMessage);
+      setMessages((prev) => [...prev, { role: "assistant", content: res.answer }]);
+    } catch (err) {
+      const errorMsg = extractErrorMessage(err);
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", content: "Sorry, I couldn't process that. Make sure the AI service is configured." },
+        { role: "assistant", content: `Sorry, I couldn't process that: ${errorMsg}` },
       ]);
     }
     setLoading(false);

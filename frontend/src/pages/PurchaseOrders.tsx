@@ -1,36 +1,7 @@
 import { useEffect, useState, FormEvent } from "react";
-import axios from "axios";
+import { purchaseService, productService, extractErrorMessage, PurchaseOrder, Product } from "../services/api";
+import { useNotification } from "../hooks/useNotification";
 import ConfirmModal from "../components/ConfirmModal";
-
-const api = axios.create({
-  baseURL: process.env.REACT_APP_API_URL || "http://localhost:8000",
-});
-
-interface PurchaseOrderItem {
-  id: number;
-  product_id: number;
-  product_name: string;
-  quantity: number;
-  unit_cost: number;
-  subtotal: number;
-}
-
-interface PurchaseOrder {
-  id: number;
-  vendor_name: string;
-  status: string;
-  total: number;
-  created_at: string;
-  updated_at: string;
-  items: PurchaseOrderItem[];
-}
-
-interface Product {
-  id: number;
-  name: string;
-  price: number;
-  quantity: number;
-}
 
 interface FormItem {
   product_id: string;
@@ -55,27 +26,23 @@ const PurchaseOrders = () => {
   const [showForm, setShowForm] = useState(false);
   const [vendorName, setVendorName] = useState("");
   const [formItems, setFormItems] = useState<FormItem[]>([{ product_id: "", quantity: "1", unit_cost: "", is_new: false, new_name: "", new_description: "" }]);
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<PurchaseOrder | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<PurchaseOrder | null>(null);
-
-  useEffect(() => { if (message) { const t = setTimeout(() => setMessage(""), 5000); return () => clearTimeout(t); } }, [message]);
-  useEffect(() => { if (error) { const t = setTimeout(() => setError(""), 5000); return () => clearTimeout(t); } }, [error]);
+  const { notification, success, error: showError } = useNotification();
 
   const fetchOrders = async () => {
     setLoading(true);
     try {
-      const res = await api.get("/purchase-orders/");
-      setOrders(res.data);
-    } catch { setError("Failed to fetch purchase orders"); }
+      const data = await purchaseService.list();
+      setOrders(data);
+    } catch (err) { showError(extractErrorMessage(err)); }
     setLoading(false);
   };
 
   const fetchProducts = async () => {
     try {
-      const res = await api.get("/products/", { params: { limit: 100 } });
-      setProducts(res.data.products || []);
+      const data = await productService.list({ limit: 100 });
+      setProducts(data.products || []);
     } catch { /* ignore */ }
   };
 
@@ -86,7 +53,6 @@ const PurchaseOrders = () => {
   const updateItem = (index: number, field: keyof FormItem, value: string | boolean) => {
     const updated = [...formItems];
     (updated[index] as any)[field] = value;
-    // Auto-fill unit_cost from product price when product is selected
     if (field === "product_id" && value === "__new__") {
       updated[index].is_new = true;
       updated[index].product_id = "";
@@ -105,7 +71,6 @@ const PurchaseOrders = () => {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    setError(""); setMessage("");
     const items = formItems
       .filter((i) => (i.product_id || i.is_new) && Number(i.quantity) > 0 && Number(i.unit_cost) > 0)
       .map((i) => {
@@ -116,52 +81,51 @@ const PurchaseOrders = () => {
       });
 
     if (!vendorName.trim() || items.length === 0) {
-      setError("Vendor name and at least one item with quantity and unit cost required");
+      showError("Vendor name and at least one item with quantity and unit cost required");
       return;
     }
 
-    // Validate new items have names
     for (const i of formItems.filter(fi => fi.is_new)) {
       if (!i.new_name.trim()) {
-        setError("New items must have a product name");
+        showError("New items must have a product name");
         return;
       }
     }
 
     setLoading(true);
     try {
-      await api.post("/purchase-orders/", { vendor_name: vendorName, items });
-      setMessage("Purchase order created");
+      await purchaseService.create({ vendor_name: vendorName, items });
+      success("Purchase order created");
       setVendorName("");
       setFormItems([{ product_id: "", quantity: "1", unit_cost: "", is_new: false, new_name: "", new_description: "" }]);
       setShowForm(false);
       fetchOrders();
       fetchProducts();
-    } catch (err: any) {
-      setError(err.response?.data?.detail || "Failed to create purchase order");
+    } catch (err) {
+      showError(extractErrorMessage(err));
     }
     setLoading(false);
   };
 
   const updateStatus = async (orderId: number, status: string) => {
     try {
-      await api.put(`/purchase-orders/${orderId}/status`, { status });
-      setMessage(`Purchase Order #${orderId} updated to ${status}`);
+      await purchaseService.updateStatus(orderId, status);
+      success(`Purchase Order #${orderId} updated to ${status}`);
       fetchOrders();
-      fetchProducts(); // Stock may have changed
-    } catch (err: any) {
-      setError(err.response?.data?.detail || "Failed to update status");
+      fetchProducts();
+    } catch (err) {
+      showError(extractErrorMessage(err));
     }
   };
 
   const handleDelete = async (id: number) => {
     setLoading(true);
     try {
-      await api.delete(`/purchase-orders/${id}`);
-      setMessage("Purchase order deleted");
+      await purchaseService.delete(id);
+      success("Purchase order deleted");
       fetchOrders();
-    } catch (err: any) {
-      setError(err.response?.data?.detail || "Failed to delete purchase order");
+    } catch (err) {
+      showError(extractErrorMessage(err));
     }
     setLoading(false);
     setDeleteTarget(null);
@@ -184,8 +148,8 @@ const PurchaseOrders = () => {
         </button>
       </div>
 
-      {message && <div className="mb-4 bg-green-50 border border-green-200 text-green-700 text-sm px-4 py-2.5 rounded-lg">{message}</div>}
-      {error && <div className="mb-4 bg-red-50 border border-red-200 text-red-600 text-sm px-4 py-2.5 rounded-lg">{error}</div>}
+      {notification && notification.type === "success" && <div className="mb-4 bg-green-50 border border-green-200 text-green-700 text-sm px-4 py-2.5 rounded-lg">{notification.message}</div>}
+      {notification && notification.type === "error" && <div className="mb-4 bg-red-50 border border-red-200 text-red-600 text-sm px-4 py-2.5 rounded-lg">{notification.message}</div>}
 
       {/* Create Purchase Order Form */}
       {showForm && (
@@ -214,7 +178,7 @@ const PurchaseOrders = () => {
                       >
                         <option value="">Select product...</option>
                         {products.map((p) => (
-                          <option key={p.id} value={p.id}>{p.name} ({p.quantity} in stock)</option>
+                          <option key={p.id} value={p.id}>{p.name} [{p.category}] ({p.quantity} in stock)</option>
                         ))}
                         <option value="__new__">➕ Add New Item</option>
                       </select>
@@ -304,7 +268,6 @@ const PurchaseOrders = () => {
                 <span>📦 {order.items.length} item{order.items.length > 1 ? "s" : ""}</span>
               </div>
 
-              {/* Item details (collapsible) */}
               {selectedOrder?.id === order.id && (
                 <div className="bg-gray-50 rounded-lg p-3 mb-3">
                   <table className="w-full text-sm">
@@ -330,7 +293,6 @@ const PurchaseOrders = () => {
                 </div>
               )}
 
-              {/* Actions */}
               <div className="flex items-center gap-2 flex-wrap">
                 <button
                   onClick={() => setSelectedOrder(selectedOrder?.id === order.id ? null : order)}

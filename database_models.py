@@ -1,9 +1,14 @@
 from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Date
-from sqlalchemy.orm import relationship
-from sqlalchemy.ext.declarative import declarative_base
-from datetime import datetime, date
+from sqlalchemy.orm import relationship, DeclarativeBase
+from datetime import datetime, date, timezone
 
-Base = declarative_base()
+
+class Base(DeclarativeBase):
+    pass
+
+
+def _utcnow():
+    return datetime.now(timezone.utc)
 
 class Product(Base):
     __tablename__ = "products"
@@ -11,6 +16,7 @@ class Product(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True)
     description = Column(String)
+    category = Column(String, default="General")
     price = Column(Float)
     quantity = Column(Integer)
 
@@ -22,8 +28,8 @@ class SalesOrder(Base):
     customer_name = Column(String, nullable=False)
     status = Column(String, default="draft")  # draft, confirmed, shipped, delivered, cancelled
     total = Column(Float, default=0.0)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
     items = relationship("SalesOrderItem", back_populates="order", cascade="all, delete-orphan")
 
@@ -50,7 +56,7 @@ class Invoice(Base):
     customer_name = Column(String, nullable=False)
     total = Column(Float, nullable=False)
     status = Column(String, default="unpaid")  # unpaid, paid, overdue
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
     paid_at = Column(DateTime, nullable=True)
 
 
@@ -61,8 +67,8 @@ class PurchaseOrder(Base):
     vendor_name = Column(String, nullable=False)
     status = Column(String, default="draft")  # draft, confirmed, received, cancelled
     total = Column(Float, default=0.0)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
     items = relationship("PurchaseOrderItem", back_populates="order", cascade="all, delete-orphan")
 
@@ -90,4 +96,4 @@ class Expense(Base):
     amount = Column(Float, nullable=False)
     vendor_name = Column(String, nullable=True)
     date = Column(Date, default=date.today)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)

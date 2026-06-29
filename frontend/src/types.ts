@@ -2,6 +2,7 @@ export interface Product {
   id: number;
   name: string;
   description: string;
+  category: string;
   price: number;
   quantity: number;
 }
@@ -10,6 +11,7 @@ export interface ProductForm {
   id: string;
   name: string;
   description: string;
+  category: string;
   price: string;
   quantity: string;
 }
