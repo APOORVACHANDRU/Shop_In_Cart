@@ -4,14 +4,20 @@ from fastapi.middleware.cors import CORSMiddleware
 import database_models
 from database import engine
 from config import CORS_ORIGINS
-from seed import init_db
 from routers import products, sales, purchases, ai
 
-# Create all tables
-database_models.Base.metadata.create_all(bind=engine)
+# Create all tables (safe — won't fail if tables already exist)
+try:
+    database_models.Base.metadata.create_all(bind=engine)
+except Exception as e:
+    print(f"Warning: create_all failed: {e}")
 
-# Seed database
-init_db()
+# Seed database (non-critical — app should still work without seed data)
+try:
+    from seed import init_db
+    init_db()
+except Exception as e:
+    print(f"Warning: init_db failed: {e}")
 
 # App
 app = FastAPI(
